@@ -1,0 +1,84 @@
+# AI Agent for DevOps 配置文件
+
+# OpenAI API配置
+openai:
+  api_key: "${OPENAI_API_KEY}"
+  model: "${OPENAI_MODEL:gpt-3.5-turbo}"
+  temperature: ${OPENAI_TEMPERATURE:0.7}
+  max_tokens: ${OPENAI_MAX_TOKENS:2000}
+  timeout: 30
+
+# 应用配置
+app:
+  name: "${APP_NAME:AIOpsAgent}"
+  version: "${APP_VERSION:1.0.0}"
+  debug: ${DEBUG:false}
+  timezone: "${TIMEZONE:Asia/Shanghai}"
+
+# 日志配置
+logging:
+  level: "${LOG_LEVEL:INFO}"
+  file: "logs/agent.log"
+  max_size: "10MB"
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 系统监控配置
+monitoring:
+  cpu_threshold: ${CPU_THRESHOLD:80.0}
+  memory_threshold: ${MEMORY_THRESHOLD:85.0}
+  disk_threshold: ${DISK_THRESHOLD:90.0}
+  check_interval: ${MONITOR_INTERVAL:30}
+  enable_alerts: true
+
+# Docker配置
+# WSL2 + Docker Desktop: 确保Docker Desktop WSL集成启用
+# 可设置环境变量: DOCKER_HOST=tcp://localhost:2375
+docker:
+  socket_path: "${DOCKER_SOCKET:unix://var/run/docker.sock}"
+  timeout: ${DOCKER_TIMEOUT:30}
+  api_version: "auto"
+
+# 文件管理配置
+file_manager:
+  max_file_size: "100MB"
+  allowed_extensions: [".txt", ".log", ".conf", ".yaml", ".yml", ".json", ".py", ".sh"]
+  search_depth: 10
+
+# 性能分析配置
+performance:
+  profiling_enabled: true
+  max_profile_time: 300
+  memory_profiling: true
+
+# 服务检查配置
+service_check:
+  timeout: 10
+  retry_count: 3
+  retry_delay: 5
+
+# Agent行为配置
+agent:
+  max_conversation_history: 50
+  response_timeout: 60
+  enable_context_memory: true
+  auto_save_conversations: true
+
+# 安全配置
+security:
+  enable_command_whitelist: true
+  allowed_commands:
+    - "docker"
+    - "ps"
+    - "top"
+    - "df"
+    - "free"
+    - "ls"
+    - "cat"
+    - "grep"
+    - "find"
+    - "systemctl"
+  dangerous_paths:
+    - "/etc/passwd"
+    - "/etc/shadow"
+    - "/root"
