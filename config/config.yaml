@@ -2,18 +2,19 @@
 
 # OpenAI API配置
 openai:
-  api_key: "${OPENAI_API_KEY}"
-  model: "${OPENAI_MODEL:gpt-3.5-turbo}"
-  temperature: ${OPENAI_TEMPERATURE:0.7}
-  max_tokens: ${OPENAI_MAX_TOKENS:2000}
+  api_key: ""
+  base_url: "https://api.openai.com/v1"  # 服务器，如 "https://api.openai.com/v1"
+  model: "gpt-3.5-turbo"
+  temperature: 0.7
+  max_tokens: 2000
   timeout: 30
 
 # 应用配置
 app:
-  name: "${APP_NAME:AIOpsAgent}"
-  version: "${APP_VERSION:1.0.0}"
-  debug: ${DEBUG:false}
-  timezone: "${TIMEZONE:Asia/Shanghai}"
+  name: "AIOpsAgent"
+  version: "1.0.0"
+  debug: true
+  timezone: "Asia/Shanghai"
 
 # 日志配置
 logging:
@@ -25,18 +26,19 @@ logging:
 
 # 系统监控配置
 monitoring:
-  cpu_threshold: ${CPU_THRESHOLD:80.0}
-  memory_threshold: ${MEMORY_THRESHOLD:85.0}
-  disk_threshold: ${DISK_THRESHOLD:90.0}
-  check_interval: ${MONITOR_INTERVAL:30}
+  cpu_threshold: 80.0
+  memory_threshold: 85.0
+  disk_threshold: 90.0
+  check_interval: 30
   enable_alerts: true
 
 # Docker配置
 # WSL2 + Docker Desktop: 确保Docker Desktop WSL集成启用
 # 可设置环境变量: DOCKER_HOST=tcp://localhost:2375
 docker:
-  socket_path: "${DOCKER_SOCKET:unix://var/run/docker.sock}"
-  timeout: ${DOCKER_TIMEOUT:30}
+  socket_path: "unix://var/run/docker.sock"
+#  socket_path: tcp://localhost:2375
+  timeout: 30
   api_version: "auto"
 
 # 文件管理配置
