@@ -5,15 +5,53 @@ Docker操作模块
 
 import docker
 from typing import Dict, List, Any, Optional
+
+from langchain.chains import llm
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from config.settings import get_config
 from src.utils.logger import get_logger
-from src.utils.helpers import run_command, format_duration
+from src.utils.helpers import run_command, format_duration, format_bytes
 from src.utils.exceptions import DockerOperationError, CommandExecutionError
 
-logger = get_logger(__name__)
+from langchain.output_parsers import PydanticOutputParser
+from langchain.prompts import PromptTemplate
+from langchain.chat_models import ChatOpenAI
+from config.settings import Settings
+from pydantic import BaseModel, Field
 
+class DockerAction(BaseModel):
+    """Docker操作解析模型"""
+    action: str = Field(description="操作类型，如 list_containers, start_container, pull_image 等")
+    target: Optional[str] = Field(default=None, description="目标容器名或镜像名")
+
+docker_parser = PydanticOutputParser(pydantic_object=DockerAction)
+
+docker_prompt = PromptTemplate(
+    template="""你是一个专业的Docker命令解析专家。请严格从以下自然语言命令中提取结构化信息：
+
+可用操作类型(action)，必须精确匹配以下之一（不要发明新类型）：
+- list_containers: 列出容器
+- container_status: 容器状态
+- start_container: 启动容器
+- stop_container: 停止容器
+- restart_container: 重启容器
+- container_logs: 容器日志
+- pull_image: 拉取镜像
+- remove_image: 删除镜像
+- list_images: 列出镜像
+- run_image: 运行镜像
+
+target: 容器名或镜像名（如 web-app 或 nginx:latest），如果命令未指定则为 None
+
+命令：{command}
+
+{format_instructions}""",
+    input_variables=["command"],
+    partial_variables={"format_instructions": docker_parser.get_format_instructions()},
+)
+
+logger = get_logger(__name__)
 
 class DockerConfig(BaseModel):
     """Docker配置模型"""
@@ -33,6 +71,43 @@ class DockerOpsTool(BaseTool):
     )
     args_schema: Optional[BaseModel] = None
 
+    def __init__(self):
+        """初始化Docker工具"""
+        super().__init__()
+
+    def _parse_command(self, command: str) -> tuple[str, Optional[str]]:
+        """
+        使用AI解析Docker命令，提取action和target
+        
+        Args:
+            command: 自然语言Docker命令
+            
+        Returns:
+            (action, target) 元组
+        """
+        # 动态创建解析链，避免工具属性冲突
+        settings = Settings()
+        openai_config = settings.get_openai_config()
+        max_tokens = openai_config.get('max_tokens', 2000)
+        model = openai_config.get('model', 'gpt-3.5-turbo')
+        temperature = openai_config.get('temperature', 0)
+        api_key = openai_config.get('api_key')
+        base_url = openai_config.get('base_url')
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            openai_api_key = api_key,
+            openai_api_base = base_url,
+            max_tokens = max_tokens,
+        )
+        chain = docker_prompt | llm | docker_parser
+        try:
+            parsed = chain.invoke({"command": command})
+            return parsed.action, parsed.target
+        except Exception as e:
+            logger.warning(f"AI解析命令失败: {e}")
+            return "unknown", None
+
     def _run(self, command: str) -> str:
         """
         执行Docker操作
@@ -46,7 +121,7 @@ class DockerOpsTool(BaseTool):
         try:
             client = self._get_docker_client()
 
-            # 解析命令意图
+            # 使用AI解析命令
             action, target = self._parse_command(command)
 
             if action == "list_containers":
@@ -67,6 +142,8 @@ class DockerOpsTool(BaseTool):
                 return self._remove_image(client, target)
             elif action == "list_images":
                 return self._list_images(client)
+            elif action == "run_image":
+                return self._run_image(client, target)
             else:
                 return f"不支持的Docker操作: {command}。支持的操作包括: 列出容器、容器状态、启动/停止/重启容器、容器日志、拉取/删除镜像、列出镜像。"
 
@@ -90,38 +167,6 @@ class DockerOpsTool(BaseTool):
             # 尝试使用命令行fallback
             logger.warning(f"Docker API连接失败，使用命令行模式: {e}")
             return None
-
-    def _parse_command(self, command: str) -> tuple:
-        """解析用户命令"""
-        command_lower = command.lower()
-
-        if "列出容器" in command_lower or "list containers" in command_lower:
-            return "list_containers", None
-        elif "状态" in command_lower or "status" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "container_status", target
-        elif "启动" in command_lower or "start" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "start_container", target
-        elif "停止" in command_lower or "stop" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "stop_container", target
-        elif "重启" in command_lower or "restart" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "restart_container", target
-        elif "日志" in command_lower or "logs" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "container_logs", target
-        elif "拉取" in command_lower or "pull" in command_lower:
-            target = command.replace("拉取", "").replace("pull", "").strip()
-            return "pull_image", target
-        elif "删除镜像" in command_lower or "remove image" in command_lower:
-            target = command.split()[-1] if command.split() else None
-            return "remove_image", target
-        elif "列出镜像" in command_lower or "list images" in command_lower:
-            return "list_images", None
-        else:
-            return "unknown", command
 
     def _list_containers(self, client) -> str:
         """列出所有容器"""
@@ -179,6 +224,28 @@ class DockerOpsTool(BaseTool):
                 raise DockerOperationError(f"无法获取容器 '{container_name}' 状态")
         else:
             return self._run_docker_command(f"docker inspect {container_name} --format='{{json .State}}'")
+
+    def _run_image(self, client, image_name: str, container_name: Optional[str] = None) -> str:
+        """创建并运行容器（一次性运行）"""
+        if not image_name:
+            return "请指定镜像名称。"
+
+        if client:
+            try:
+                container = client.containers.run(image_name, name=container_name, detach=False)
+                return f"✅ 镜像 '{image_name}' 已运行成功！"
+            except docker.errors.ImageNotFound:
+                return f"镜像 '{image_name}' 不存在，请先拉取镜像。"
+            except Exception as e:
+                logger.error(f"运行镜像失败: {e}")
+                raise DockerOperationError(f"无法运行镜像 '{image_name}': {str(e)}")
+        else:
+            # 命令行 fallback
+            result = self._run_docker_command(f"run {image_name}")
+            if result[0] == 0:
+                return f"✅ 镜像 '{image_name}' 已运行成功！"
+            else:
+                return f"❌ 运行镜像 '{image_name}' 失败: {result[2]}"
 
     def _start_container(self, client, container_name: str) -> str:
         """启动容器"""

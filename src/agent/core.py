@@ -160,7 +160,7 @@ class DevOpsAgent:
                 max_iterations=5,
                 early_stopping_method="generate",
                 memory=self.memory,
-                return_intermediate_steps=True
+                return_intermediate_steps=False
             )
 
             logger.info("LangChain Agent初始化成功")
