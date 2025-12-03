@@ -8,6 +8,7 @@ Handles global checks, WSL detection, and interactive mode.
 import sys
 import os
 import signal
+import platform
 from rich.console import Console
 
 
@@ -23,6 +24,19 @@ console = Console()
 logger = setup_logger("AIOpsAgent.cli")
 
 
+def _is_wsl():
+    """
+    Detect WSL2 environment in a cross-platform safe way.
+    """
+    if platform.system().lower() != 'linux':
+        return False
+    try:
+        with open('/proc/version', 'r', encoding='utf-8') as f:
+            return 'microsoft' in f.read().lower()
+    except Exception:
+        return False
+
+
 def run_interactive_mode():
     """
     Launch interactive mode when no subcommand is provided.
@@ -31,8 +45,7 @@ def run_interactive_mode():
         console.print("[bold red]Configuration validation failed[/bold red]")
         sys.exit(1)
 
-    # WSL2 detection
-    if os.uname().sysname.lower() == 'linux' and 'microsoft' in os.uname().release.lower():
+    if _is_wsl():
         console.print("[bold yellow]WSL2 environment detected. Ensure Docker WSL integration is enabled.[/bold yellow]")
 
     # Start interactive agent session

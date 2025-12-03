@@ -12,8 +12,9 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from config.settings import get_config
 from src.utils.logger import get_logger
-from src.utils.helpers import get_file_info, create_backup_filename, validate_file_path, truncate_string
+from src.utils.helpers import get_file_info, create_backup_filename, validate_file_path, truncate_string, format_bytes
 from src.utils.exceptions import FileOperationError, PermissionError
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -95,19 +96,20 @@ class FileManagerTool(BaseTool):
     
     def _extract_filename(self, operation: str) -> str:
         """从操作描述中提取文件名"""
-        # 简单提取引号内或最后一个词作为文件名
         if '"' in operation:
             return operation.split('"')[1]
+        if "'" in operation:
+            return operation.split("'")[1]
         words = operation.split()
         return words[-1] if words else ""
     
     def _extract_content(self, operation: str) -> Optional[str]:
         """从操作描述中提取文件内容"""
-        if "内容" in operation or "content" in operation:
-            # 假设内容在操作描述的最后部分
-            parts = operation.split("内容:", 1)
-            if len(parts) > 1:
-                return parts[1].strip()
+        if "内容:" in operation:
+            return operation.split("内容:", 1)[1].strip()
+        op_lower = operation.lower()
+        if "content:" in op_lower:
+            return op_lower.split("content:", 1)[1].strip()
         return None
     
     def _extract_path(self, operation: str) -> str:
@@ -134,10 +136,15 @@ class FileManagerTool(BaseTool):
             path = Path(filename)
             if path.exists():
                 return f"文件 '{filename}' 已存在。"
+            config = FileManagerConfig()
+            if path.suffix and config.allowed_extensions and path.suffix.lower() not in [ext.lower() for ext in config.allowed_extensions]:
+                return f"不允许的文件扩展名 '{path.suffix}'。允许: {', '.join(config.allowed_extensions)}"
             
             if content is None:
                 content = "# 新创建的文件内容"
             
+            if not validate_file_path(str(path), must_exist=False):
+                return f"父目录不存在，无法创建 '{filename}'。"
             path.write_text(content, encoding='utf-8')
             
             info = get_file_info(str(path))
@@ -238,9 +245,18 @@ class FileManagerTool(BaseTool):
             if not pattern:
                 pattern = "*"
             
-            # 在当前目录搜索
             current_dir = Path(".")
-            matches = list(current_dir.glob(pattern, recursive=False))
+            config = FileManagerConfig()
+            matches = [p for p in current_dir.rglob(pattern)]
+            filtered = []
+            for p in matches:
+                try:
+                    depth = len(p.relative_to(current_dir).parts)
+                except ValueError:
+                    depth = 0
+                if depth <= config.search_depth:
+                    filtered.append(p)
+            matches = filtered
             
             if not matches:
                 return f"未找到匹配 '{pattern}' 的文件。"
@@ -273,6 +289,8 @@ class FileManagerTool(BaseTool):
             size_bytes = info.get('size', 0)
             
             config = FileManagerConfig()
+            if full_path.suffix and config.allowed_extensions and full_path.suffix.lower() not in [ext.lower() for ext in config.allowed_extensions]:
+                return f"不允许读取扩展名为 '{full_path.suffix}' 的文件。允许: {', '.join(config.allowed_extensions)}"
             max_size_bytes = self._parse_size(config.max_file_size)
             
             if size_bytes > max_size_bytes:
@@ -362,6 +380,6 @@ if __name__ == "__main__":
     try:
         tool = FileManagerTool()
         print("测试文件管理工具:")
-        print(tool._run("列出当前目录"))
+        print(tool._run("列出 ."))
     except Exception as e:
         print(f"测试失败: {e}")
