@@ -8,8 +8,9 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import uuid
 from langchain.agents import initialize_agent, AgentType
-from langchain.llms import OpenAI
-from langchain_openai import ChatOpenAI
+# from langchain.llms import OpenAI
+# from langchain_openai import ChatOpenAI
+from langchain.chat_models import ChatOpenAI
 from langchain.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
@@ -51,20 +52,17 @@ class DevOpsAgent:
 
         # Initialize language model
         try:
-            if 'gpt-3.5-turbo' in model or 'gpt-4' in model:
-                self.llm = ChatOpenAI(
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
-            else:
-                self.llm = OpenAI(
-                    model_name=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    openai_api_key=api_key,
-                    openai_api_base=base_url
-                )
+            self.llm = ChatOpenAI(
+                model=model,
+                temperature=temperature,
+                openai_api_key=api_key,
+                openai_api_base=base_url,
+                max_tokens=max_tokens,
+                default_headers={
+                    "HTTP-Referer": "https://localhost/",
+                    "X-Title": "DevOps-AIOps-Agent"
+                }
+            )
             logger.info(f"LLM initialized successfully: {model} (base_url: {base_url})")
         except Exception as e:
             logger.error(f"Failed to initialize LLM: {e}")

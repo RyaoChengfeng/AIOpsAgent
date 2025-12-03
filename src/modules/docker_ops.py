@@ -97,6 +97,10 @@ class DockerOpsTool(BaseTool):
             openai_api_key=api_key,
             openai_api_base=base_url,
             max_tokens=max_tokens,
+            default_headers={
+                "HTTP-Referer": "https://localhost/",
+                "X-Title": "DevOps-AIOps-Agent"
+            }
         )
         chain = docker_prompt | llm | docker_parser
         try:
