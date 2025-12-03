@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class Settings:
     """配置管理类"""
     
-    def __init__(self, config_file: str = "config/config.yaml"):
+    def __init__(self, config_file: str = "config/config.local.yaml"):
         """
         初始化配置管理器
         

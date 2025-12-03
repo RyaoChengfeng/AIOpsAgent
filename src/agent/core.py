@@ -1,6 +1,6 @@
 """
-AI Agent核心逻辑模块
-实现基于LangChain的智能Agent
+Core logic module for the AI Agent.
+Implements a LangChain-based intelligent DevOps Agent.
 """
 
 import os
@@ -9,7 +9,7 @@ from datetime import datetime
 import uuid
 from langchain.agents import initialize_agent, AgentType
 from langchain.llms import OpenAI
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
@@ -24,19 +24,19 @@ logger = get_logger(__name__)
 
 
 class DevOpsAgent:
-    """DevOps AI Agent主类"""
+    """Main class for the DevOps AI Agent."""
 
     def __init__(self, config_path: str = "config/config.yaml"):
         """
-        初始化DevOps AI Agent
-        
+        Initialize the DevOps AI Agent.
+
         Args:
-            config_path: 配置文件路径
+            config_path: Path to the configuration file.
         """
         self.config = Settings()
         self._validate_configuration()
 
-        # 加载OpenAI配置
+        # Load OpenAI configuration
         openai_config = self.config.get_openai_config()
         api_key = openai_config.get('api_key')
         base_url = openai_config.get('base_url')
@@ -45,19 +45,17 @@ class DevOpsAgent:
         max_tokens = openai_config.get('max_tokens', 2000)
 
         if not api_key or api_key == 'your-openai-api-key-here':
-            raise ConfigurationError("请设置有效的OpenAI API密钥")
+            raise ConfigurationError("A valid OpenAI API key must be provided.")
 
         os.environ['OPENAI_API_KEY'] = api_key
 
-        # 初始化语言模型
+        # Initialize language model
         try:
             if 'gpt-3.5-turbo' in model or 'gpt-4' in model:
                 self.llm = ChatOpenAI(
-                    model_name=model,
+                    model=model,
                     temperature=temperature,
-                    max_tokens=max_tokens,
-                    openai_api_key=api_key,
-                    openai_api_base=base_url
+                    max_tokens=max_tokens
                 )
             else:
                 self.llm = OpenAI(
@@ -67,91 +65,82 @@ class DevOpsAgent:
                     openai_api_key=api_key,
                     openai_api_base=base_url
                 )
-            logger.info(f"成功初始化语言模型: {model} (base_url: {base_url})")
+            logger.info(f"LLM initialized successfully: {model} (base_url: {base_url})")
         except Exception as e:
-            logger.error(f"初始化语言模型失败: {e}")
-            raise AIAgentError(f"无法初始化AI模型: {e}")
+            logger.error(f"Failed to initialize LLM: {e}")
+            raise AIAgentError(f"Unable to initialize AI model: {e}")
 
-        # 初始化工具
+        # Initialize tools
         self.tools = self._initialize_tools()
 
-        # 初始化内存
+        # Initialize memory
         self.memory = ConversationBufferMemory(
             memory_key="chat_history",
             return_messages=True,
-            max_token_limit=2000
+            # max_token_limit removed
         )
 
-        self.conversation_history = []
+        # Initialize conversation history log
+        self.conversation_history: List[Dict[str, Any]] = []
 
-        # 初始化Agent
+        # Initialize Agent
         self.agent = self._initialize_agent()
-
-        logger.info("DevOps AI Agent初始化完成")
+        logger.info("DevOps AI Agent initialized successfully.")
 
     def _validate_configuration(self):
-        """验证配置"""
+        """Validate configuration."""
         if not self.config.validate_config():
-            raise ConfigurationError("配置验证失败，请检查配置文件")
+            raise ConfigurationError("Configuration validation failed. Please check the config file.")
 
     def _initialize_tools(self) -> List[Tool]:
-        """初始化工具列表"""
+        """Initialize the list of tools."""
         tools = []
 
         try:
-            # Docker操作工具
             tools.append(DockerOpsTool())
-
-            # 系统监控工具
             tools.append(SystemMonitorTool())
-
-            # 文件管理工具
             tools.append(FileManagerTool())
-
-            # 日志分析工具
             tools.append(LogAnalyzerTool())
 
-            # 性能分析工具
+            # PerformanceAnalyzerTool could be added here
             # tools.append(PerformanceAnalyzerTool())
 
-            # 服务检查工具
             tools.append(ServiceCheckerTool())
 
-            logger.info(f"成功初始化 {len(tools)} 个工具")
+            logger.info(f"{len(tools)} tools initialized successfully.")
             return tools
 
         except Exception as e:
-            logger.error(f"初始化工具失败: {e}")
-            raise AIAgentError(f"工具初始化失败: {e}")
+            logger.error(f"Failed to initialize tools: {e}")
+            raise AIAgentError(f"Tool initialization failed: {e}")
 
     def _initialize_agent(self):
-        """初始化LangChain Agent"""
+        """Initialize the LangChain Agent."""
         try:
-            # 系统提示模板
+            # System prompt template
             system_prompt = SystemMessagePromptTemplate.from_template(
-                """你是一个专业的DevOps AI助手，专门帮助用户管理DevOps任务。
-                
-功能包括：
-- Docker容器和镜像管理
-- 系统资源监控（CPU、内存、磁盘、网络）
-- 文件和目录操作
-- 日志文件分析和错误诊断
-- Python程序性能分析
-- 系统服务状态检查和重启
+                """
+                You are a professional DevOps AI assistant that helps users manage DevOps tasks.
+                Capabilities include:
+                - Docker container and image management
+                - System resource monitoring (CPU, memory, disk, network)
+                - File and directory operations
+                - Log file analysis and error diagnostics
+                - Python program performance analysis
+                - System service status checks and restarts
 
-请使用自然语言与用户沟通，提供清晰、专业的建议。
-当需要执行操作时，使用提供的工具。
-如果不确定如何操作，请询问用户更多细节。
+                Communicate naturally with the user and provide clear, professional advice.
+                When actions are needed, use the provided tools.
+                If uncertain, request additional details from the user.
 
-重要规则：
-1. 始终优先考虑系统安全
-2. 确认危险操作（如删除文件、重启服务）
-3. 提供操作结果的详细解释
-4. 如果工具执行失败，提供故障排除建议
-5. 保持响应简洁但信息完整"""
+                Important Rules:
+                1. Always prioritize system safety.
+                2. Confirm dangerous operations (e.g., deleting files, restarting services).
+                3. Provide detailed explanations of results.
+                4. If a tool fails, provide troubleshooting suggestions.
+                5. Keep responses concise but complete."""
             )
 
-            # 初始化Agent
             agent = initialize_agent(
                 tools=self.tools,
                 llm=self.llm,
@@ -163,40 +152,35 @@ class DevOpsAgent:
                 return_intermediate_steps=False
             )
 
-            logger.info("LangChain Agent初始化成功")
+            logger.info("LangChain Agent initialized successfully.")
             return agent
 
         except Exception as e:
-            logger.error(f"初始化Agent失败: {e}")
-            raise AIAgentError(f"Agent初始化失败: {e}")
+            logger.error(f"Failed to initialize Agent: {e}")
+            raise AIAgentError(f"Agent initialization failed: {e}")
 
     def chat(self, user_input: str) -> Dict[str, Any]:
         """
-        与Agent进行对话
-        
+        Conduct chat interaction with the Agent.
         Args:
-            user_input: 用户输入
-            
+            user_input: User query.
         Returns:
-            对话结果字典
+            Response dictionary.
         """
         try:
-            logger.info(f"用户输入: {user_input}")
+            logger.info(f"User input: {user_input}")
 
-            # 添加到对话历史
             self.conversation_history.append({
                 'role': 'user',
                 'content': user_input,
                 'timestamp': datetime.now().isoformat()
             })
 
-            # 执行Agent
             result = self.agent.invoke(
                 {"input": user_input},
                 config={"callbacks": self._create_callback()}
             )
 
-            # 提取AI响应
             if isinstance(result, dict):
                 ai_response = result.get('output', '')
                 intermediate_steps = result.get('intermediate_steps', [])
@@ -204,7 +188,6 @@ class DevOpsAgent:
                 ai_response = str(result)
                 intermediate_steps = []
 
-            # 添加到对话历史
             self.conversation_history.append({
                 'role': 'assistant',
                 'content': ai_response,
@@ -212,12 +195,11 @@ class DevOpsAgent:
                 'timestamp': datetime.now().isoformat()
             })
 
-            # 限制历史长度
             max_history = self.config.get('agent.max_conversation_history', 50)
             if len(self.conversation_history) > max_history:
                 self.conversation_history = self.conversation_history[-max_history:]
 
-            logger.info(f"AI响应: {ai_response}")
+            logger.info(f"AI response: {ai_response}")
 
             return {
                 'response': ai_response,
@@ -227,8 +209,8 @@ class DevOpsAgent:
             }
 
         except Exception as e:
-            logger.error(f"Agent对话执行失败: {e}")
-            error_response = f"抱歉，我遇到了一个错误: {str(e)}。请稍后重试或提供更多细节。"
+            logger.error(f"Agent execution failed: {e}")
+            error_response = f"Sorry, an error occurred: {str(e)}. Please try again later or provide more details."
 
             self.conversation_history.append({
                 'role': 'assistant',
@@ -244,7 +226,7 @@ class DevOpsAgent:
             }
 
     def _create_callback(self) -> CallbackManagerForLLMRun:
-        """创建回调管理器"""
+        """Create callback manager."""
         from langchain.callbacks.base import BaseCallbackHandler
 
         class DevOpsCallbackHandler(BaseCallbackHandler):
@@ -253,35 +235,35 @@ class DevOpsAgent:
                 self.logger = get_logger("agent_callback")
 
             def on_llm_start(self, serialized, prompts, **kwargs):
-                self.logger.debug(f"LLM开始处理: {prompts[0][:100]}...")
+                self.logger.debug(f"LLM start: {prompts[0][:100]}...")
 
             def on_llm_end(self, response, **kwargs):
-                self.logger.debug("LLM处理完成")
+                self.logger.debug("LLM processing complete.")
 
             def on_tool_start(self, serialized, input_str, **kwargs):
-                self.logger.info(f"工具开始执行: {serialized['name']} - 输入: {input_str}")
+                self.logger.info(f"Tool start: {serialized['name']} - Input: {input_str}")
 
             def on_tool_end(self, output, **kwargs):
-                self.logger.info(f"工具执行完成: {output[:200]}...")
+                self.logger.info(f"Tool finished: {output[:200]}...")
 
         return CallbackManagerForLLMRun(
-            run_id=str(uuid.uuid4()),  # 唯一 run_id
-            handlers=[],  # 非继承回调列表
-            inheritable_handlers=[DevOpsCallbackHandler(self)]  # 可继承回调
+            run_id=uuid.uuid4(),
+            handlers=[],
+            inheritable_handlers=[DevOpsCallbackHandler(self)]
         )
 
     def get_conversation_history(self) -> List[Dict[str, str]]:
-        """获取对话历史"""
+        """Return conversation history."""
         return self.conversation_history.copy()
 
     def clear_conversation_history(self):
-        """清除对话历史"""
+        """Clear conversation history and memory."""
         self.conversation_history.clear()
         self.memory.clear()
-        logger.info("对话历史已清除")
+        logger.info("Conversation history cleared.")
 
     def get_available_tools(self) -> List[Dict[str, str]]:
-        """获取可用工具信息"""
+        """Return metadata about available tools."""
         tools_info = []
         for tool in self.tools:
             tools_info.append({
@@ -292,30 +274,29 @@ class DevOpsAgent:
         return tools_info
 
     def shutdown(self):
-        """关闭Agent，清理资源"""
+        """Shutdown the Agent and clean resources."""
         try:
             self.memory.clear()
-            logger.info("Agent已关闭")
+            logger.info("Agent shutdown completed.")
         except Exception as e:
-            logger.warning(f"关闭Agent时出现警告: {e}")
+            logger.warning(f"Warning during shutdown: {e}")
 
 
 def create_devops_agent() -> DevOpsAgent:
     """
-    创建DevOps Agent的工厂函数
-    
+    Factory function to create DevOps Agent.
+
     Returns:
-        DevOpsAgent实例
+        DevOpsAgent instance.
     """
     return DevOpsAgent()
 
 
 if __name__ == "__main__":
-    # 测试Agent初始化
     try:
         agent = create_devops_agent()
-        print("DevOps AI Agent初始化成功！")
-        print(f"可用工具: {len(agent.tools)} 个")
+        print("DevOps AI Agent initialized successfully!")
+        print(f"Available tools: {len(agent.tools)}")
         agent.shutdown()
     except Exception as e:
-        print(f"初始化失败: {e}")
+        print(f"Initialization failed: {e}")
