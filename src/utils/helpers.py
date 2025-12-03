@@ -1,6 +1,6 @@
 """
-辅助函数模块
-提供通用的工具函数
+Utility Functions Module
+Provides general-purpose helper functions
 """
 
 import os
@@ -19,13 +19,13 @@ logger = get_logger(__name__)
 
 def format_bytes(bytes_value: int) -> str:
     """
-    格式化字节数为人类可读的格式
-    
+    Format a byte value into a human-readable string.
+
     Args:
-        bytes_value: 字节数
-        
+        bytes_value: Byte count
+
     Returns:
-        格式化后的字符串
+        Formatted string
     """
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if bytes_value < 1024.0:
@@ -36,14 +36,14 @@ def format_bytes(bytes_value: int) -> str:
 
 def format_percentage(value: float, total: float) -> str:
     """
-    格式化百分比
-    
+    Format percentage.
+
     Args:
-        value: 当前值
-        total: 总值
-        
+        value: Current value
+        total: Total value
+
     Returns:
-        百分比字符串
+        Percentage string
     """
     if total == 0:
         return "0.0%"
@@ -53,25 +53,25 @@ def format_percentage(value: float, total: float) -> str:
 
 def format_duration(seconds: float) -> str:
     """
-    格式化时间间隔
-    
+    Format a duration value.
+
     Args:
-        seconds: 秒数
-        
+        seconds: Number of seconds
+
     Returns:
-        格式化后的时间字符串
+        Formatted duration string
     """
     if seconds < 60:
-        return f"{seconds:.1f}秒"
+        return f"{seconds:.1f}s"
     elif seconds < 3600:
         minutes = seconds / 60
-        return f"{minutes:.1f}分钟"
+        return f"{minutes:.1f}min"
     elif seconds < 86400:
         hours = seconds / 3600
-        return f"{hours:.1f}小时"
+        return f"{hours:.1f}h"
     else:
         days = seconds / 86400
-        return f"{days:.1f}天"
+        return f"{days:.1f}d"
 
 
 def run_command(
@@ -81,20 +81,20 @@ def run_command(
     shell: bool = True
 ) -> Tuple[int, str, str]:
     """
-    执行系统命令
-    
+    Execute a system command.
+
     Args:
-        command: 要执行的命令
-        timeout: 超时时间（秒）
-        capture_output: 是否捕获输出
-        shell: 是否使用shell执行
-        
+        command: Command to execute
+        timeout: Timeout in seconds
+        capture_output: Whether to capture output
+        shell: Execute in shell mode
+
     Returns:
-        (返回码, 标准输出, 标准错误)
+        (return_code, stdout, stderr)
     """
     try:
-        logger.debug(f"执行命令: {command}")
-        
+        logger.debug(f"Executing command: {command}")
+
         result = subprocess.run(
             command,
             timeout=timeout,
@@ -102,32 +102,32 @@ def run_command(
             text=True,
             shell=shell
         )
-        
-        logger.debug(f"命令执行完成，返回码: {result.returncode}")
+
+        logger.debug(f"Command completed, return code: {result.returncode}")
         return result.returncode, result.stdout, result.stderr
-        
+
     except subprocess.TimeoutExpired:
-        logger.error(f"命令执行超时: {command}")
-        return -1, "", "命令执行超时"
+        logger.error(f"Command timed out: {command}")
+        return -1, "", "Command execution timed out"
     except Exception as e:
-        logger.error(f"命令执行失败: {e}")
+        logger.error(f"Command execution failed: {e}")
         return -1, "", str(e)
 
 
 def is_port_open(host: str, port: int, timeout: int = 5) -> bool:
     """
-    检查端口是否开放
-    
+    Check if a port is open.
+
     Args:
-        host: 主机地址
-        port: 端口号
-        timeout: 超时时间
-        
+        host: Host address
+        port: Port number
+        timeout: Timeout
+
     Returns:
-        端口是否开放
+        Whether the port is open
     """
     import socket
-    
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
@@ -139,35 +139,35 @@ def is_port_open(host: str, port: int, timeout: int = 5) -> bool:
 
 def get_process_by_name(name: str) -> List[Dict[str, Any]]:
     """
-    根据进程名获取进程信息
-    
+    Get process info by name.
+
     Args:
-        name: 进程名
-        
+        name: Process name
+
     Returns:
-        进程信息列表
+        List of process information
     """
     processes = []
-    
+
     try:
         for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
             if name.lower() in proc.info['name'].lower():
                 processes.append(proc.info)
     except Exception as e:
-        logger.error(f"获取进程信息失败: {e}")
-    
+        logger.error(f"Failed to get process info: {e}")
+
     return processes
 
 
 def get_process_by_port(port: int) -> Optional[Dict[str, Any]]:
     """
-    根据端口号获取进程信息
-    
+    Get process info by port number.
+
     Args:
-        port: 端口号
-        
+        port: Port number
+
     Returns:
-        进程信息或None
+        Process info or None
     """
     try:
         for proc in psutil.process_iter(['pid', 'name']):
@@ -183,20 +183,20 @@ def get_process_by_port(port: int) -> Optional[Dict[str, Any]]:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
     except Exception as e:
-        logger.error(f"根据端口获取进程信息失败: {e}")
-    
+        logger.error(f"Failed to get process by port: {e}")
+
     return None
 
 
 def parse_log_level(log_content: str) -> Dict[str, int]:
     """
-    解析日志内容，统计各级别日志数量
-    
+    Parse log content and count log levels.
+
     Args:
-        log_content: 日志内容
-        
+        log_content: Log content
+
     Returns:
-        各级别日志数量统计
+        Count per log level
     """
     levels = {
         'DEBUG': 0,
@@ -205,29 +205,28 @@ def parse_log_level(log_content: str) -> Dict[str, int]:
         'ERROR': 0,
         'CRITICAL': 0
     }
-    
+
     for line in log_content.split('\n'):
         for level in levels.keys():
             if level in line.upper():
                 levels[level] += 1
                 break
-    
+
     return levels
 
 
 def extract_error_patterns(log_content: str) -> List[str]:
     """
-    从日志中提取错误模式
-    
+    Extract error patterns from log text.
+
     Args:
-        log_content: 日志内容
-        
+        log_content: Log content
+
     Returns:
-        错误模式列表
+        List of error patterns
     """
     error_patterns = []
-    
-    # 常见错误模式
+
     patterns = [
         r'Exception.*?:.*',
         r'Error.*?:.*',
@@ -238,24 +237,24 @@ def extract_error_patterns(log_content: str) -> List[str]:
         r'No such file.*',
         r'Cannot.*'
     ]
-    
+
     for pattern in patterns:
         matches = re.findall(pattern, log_content, re.IGNORECASE)
         error_patterns.extend(matches)
-    
-    return list(set(error_patterns))  # 去重
+
+    return list(set(error_patterns))
 
 
 def safe_json_loads(json_str: str, default: Any = None) -> Any:
     """
-    安全的JSON解析
-    
+    Safely parse JSON.
+
     Args:
-        json_str: JSON字符串
-        default: 解析失败时的默认值
-        
+        json_str: JSON string
+        default: Default value if parsing fails
+
     Returns:
-        解析结果或默认值
+        Parsed result or default value
     """
     try:
         return json.loads(json_str)
@@ -265,14 +264,14 @@ def safe_json_loads(json_str: str, default: Any = None) -> Any:
 
 def safe_json_dumps(obj: Any, default: str = "{}") -> str:
     """
-    安全的JSON序列化
-    
+    Safely serialize object to JSON.
+
     Args:
-        obj: 要序列化的对象
-        default: 序列化失败时的默认值
-        
+        obj: Object to serialize
+        default: Default return value if serialization fails
+
     Returns:
-        JSON字符串或默认值
+        JSON string or default
     """
     try:
         return json.dumps(obj, ensure_ascii=False, indent=2)
@@ -282,22 +281,21 @@ def safe_json_dumps(obj: Any, default: str = "{}") -> str:
 
 def validate_file_path(file_path: str, must_exist: bool = True) -> bool:
     """
-    验证文件路径
-    
+    Validate a file path.
+
     Args:
-        file_path: 文件路径
-        must_exist: 文件是否必须存在
-        
+        file_path: File path
+        must_exist: Whether file must exist
+
     Returns:
-        路径是否有效
+        Whether the path is valid
     """
     try:
         path = Path(file_path)
-        
+
         if must_exist:
             return path.exists() and path.is_file()
         else:
-            # 检查父目录是否存在
             return path.parent.exists()
     except Exception:
         return False
@@ -305,13 +303,13 @@ def validate_file_path(file_path: str, must_exist: bool = True) -> bool:
 
 def create_backup_filename(original_path: str) -> str:
     """
-    创建备份文件名
-    
+    Create a backup file name.
+
     Args:
-        original_path: 原始文件路径
-        
+        original_path: Original file path
+
     Returns:
-        备份文件路径
+        Backup file path
     """
     path = Path(original_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -321,19 +319,19 @@ def create_backup_filename(original_path: str) -> str:
 
 def get_file_info(file_path: str) -> Dict[str, Any]:
     """
-    获取文件信息
-    
+    Get basic file information.
+
     Args:
-        file_path: 文件路径
-        
+        file_path: File path
+
     Returns:
-        文件信息字典
+        Dictionary containing file info
     """
     try:
         path = Path(file_path)
         if not path.exists():
             return {}
-        
+
         stat = path.stat()
         return {
             'name': path.name,
@@ -347,67 +345,67 @@ def get_file_info(file_path: str) -> Dict[str, Any]:
             'permissions': oct(stat.st_mode)[-3:]
         }
     except Exception as e:
-        logger.error(f"获取文件信息失败: {e}")
+        logger.error(f"Failed to get file info: {e}")
         return {}
 
 
 def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
     """
-    重试装饰器
-    
+    Retry decorator.
+
     Args:
-        max_retries: 最大重试次数
-        delay: 重试间隔（秒）
+        max_retries: Max retry count
+        delay: Delay between retries (seconds)
     """
     def decorator(func):
         def wrapper(*args, **kwargs):
             last_exception = None
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
                     if attempt < max_retries:
-                        logger.warning(f"函数 {func.__name__} 第 {attempt + 1} 次尝试失败: {e}")
+                        logger.warning(f"Function {func.__name__} failed on attempt {attempt + 1}: {e}")
                         time.sleep(delay)
                     else:
-                        logger.error(f"函数 {func.__name__} 重试 {max_retries} 次后仍然失败")
-            
+                        logger.error(f"Function {func.__name__} still failed after {max_retries} retries")
+
             raise last_exception
-        
+
         return wrapper
     return decorator
 
 
 def truncate_string(text: str, max_length: int = 100, suffix: str = "...") -> str:
     """
-    截断字符串
-    
+    Truncate a string.
+
     Args:
-        text: 原始字符串
-        max_length: 最大长度
-        suffix: 截断后缀
-        
+        text: Original text
+        max_length: Max length allowed
+        suffix: Truncation suffix
+
     Returns:
-        截断后的字符串
+        Truncated text
     """
     if len(text) <= max_length:
         return text
-    
+
     return text[:max_length - len(suffix)] + suffix
 
 
 def get_system_info() -> Dict[str, Any]:
     """
-    获取系统基本信息
-    
+    Get system basic information.
+
     Returns:
-        系统信息字典
+        Dictionary containing system information
     """
     try:
         import platform
-        
+
         return {
             'system': platform.system(),
             'release': platform.release(),
@@ -421,5 +419,5 @@ def get_system_info() -> Dict[str, Any]:
             'boot_time': datetime.fromtimestamp(psutil.boot_time())
         }
     except Exception as e:
-        logger.error(f"获取系统信息失败: {e}")
+        logger.error(f"Failed to get system info: {e}")
         return {}

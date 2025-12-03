@@ -69,7 +69,7 @@ pip install -r requirements.txt
 Copy the example configuration and set your OpenAI API key:
 
 ```bash
-cp config/config.yaml. config/config.local.yaml
+cp config/config.yaml config/config.local.yaml
 ```
 and make sure put your `config.local.yaml` in `.gitignore`
 

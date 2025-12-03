@@ -1,6 +1,6 @@
 """
-配置管理模块
-负责加载和管理应用配置
+Configuration management module
+Responsible for loading and managing application configuration
 """
 
 import os
@@ -14,21 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class Settings:
-    """配置管理类"""
+    """Configuration management class"""
     
     def __init__(self, config_file: str = "config/config.local.yaml"):
         """
-        初始化配置管理器
+        Initialize configuration manager
         
         Args:
-            config_file: 配置文件路径
+            config_file: Config file path
         """
         self.config_file = config_file
         self.config: Dict[str, Any] = {}
         self._load_config()
     
     def _load_config(self):
-        """加载配置文件"""
+        """Load config file"""
         try:
             # 加载环境变量
             load_dotenv()
@@ -36,7 +36,7 @@ class Settings:
             # 读取YAML配置文件
             config_path = Path(self.config_file)
             if not config_path.exists():
-                logger.warning(f"配置文件 {self.config_file} 不存在，使用默认配置")
+                logger.warning(f"Config file {self.config_file} does not exist, using default config")
                 self._load_default_config()
                 return
             
@@ -49,14 +49,14 @@ class Settings:
             # 解析YAML
             self.config = yaml.safe_load(config_content)
             
-            logger.info(f"成功加载配置文件: {self.config_file}")
+            logger.info(f"Successfully loaded config file: {self.config_file}")
             
         except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
+            logger.error(f"Failed to load config file: {e}")
             self._load_default_config()
     
     def _substitute_env_vars(self, content: str) -> str:
-        """替换配置文件中的环境变量"""
+        """Substitute environment variables in config file"""
         import re
         
         def replace_var(match):
@@ -72,7 +72,7 @@ class Settings:
         return re.sub(pattern, replace_var, content)
     
     def _load_default_config(self):
-        """加载默认配置"""
+        """Load default config"""
         self.config = {
             'openai': {
                 'api_key': os.getenv('OPENAI_API_KEY', ''),
@@ -110,14 +110,14 @@ class Settings:
     
     def get(self, key: str, default: Any = None) -> Any:
         """
-        获取配置值
+        Get config value
         
         Args:
-            key: 配置键，支持点号分隔的嵌套键，如 'openai.api_key'
-            default: 默认值
+            key: Config key, supports dot-separated nested keys, e.g., 'openai.api_key'
+            default: Default value
             
         Returns:
-            配置值
+            Config value
         """
         keys = key.split('.')
         value = self.config
@@ -131,11 +131,11 @@ class Settings:
     
     def set(self, key: str, value: Any):
         """
-        设置配置值
+        Set config value
         
         Args:
-            key: 配置键
-            value: 配置值
+            key: Config key
+            value: Config value
         """
         keys = key.split('.')
         config = self.config
@@ -148,31 +148,31 @@ class Settings:
         config[keys[-1]] = value
     
     def get_openai_config(self) -> Dict[str, Any]:
-        """获取OpenAI配置"""
+        """Get OpenAI config"""
         return self.get('openai', {})
     
     def get_app_config(self) -> Dict[str, Any]:
-        """获取应用配置"""
+        """Get app config"""
         return self.get('app', {})
     
     def get_logging_config(self) -> Dict[str, Any]:
-        """获取日志配置"""
+        """Get logging config"""
         return self.get('logging', {})
     
     def get_monitoring_config(self) -> Dict[str, Any]:
-        """获取监控配置"""
+        """Get monitoring config"""
         return self.get('monitoring', {})
     
     def get_docker_config(self) -> Dict[str, Any]:
-        """获取Docker配置"""
+        """Get Docker config"""
         return self.get('docker', {})
     
     def validate_config(self) -> bool:
         """
-        验证配置的有效性
+        Validate config validity
         
         Returns:
-            配置是否有效
+            Whether config is valid
         """
         try:
             # 检查必需的配置项
@@ -185,28 +185,28 @@ class Settings:
             for key in required_keys:
                 value = self.get(key)
                 if not value:
-                    logger.error(f"缺少必需的配置项: {key}")
+                    logger.error(f"Missing required config item: {key}")
                     return False
             
             # 检查OpenAI API密钥
             api_key = self.get('openai.api_key')
             if not api_key or api_key == 'your-openai-api-key-here':
-                logger.error("请设置有效的OpenAI API密钥")
+                logger.error("Please set a valid OpenAI API key")
                 return False
             
             return True
             
         except Exception as e:
-            logger.error(f"配置验证失败: {e}")
+            logger.error(f"Config validation failed: {e}")
             return False
     
     def reload(self):
-        """重新加载配置"""
+        """Reload config"""
         self._load_config()
-        logger.info("配置已重新加载")
+        logger.info("Config reloaded successfully")
     
     def to_dict(self) -> Dict[str, Any]:
-        """返回完整的配置字典"""
+        """Return full config dictionary"""
         return self.config.copy()
 
 
@@ -215,22 +215,22 @@ settings = Settings()
 
 
 def get_settings() -> Settings:
-    """获取配置实例"""
+    """Get config instance"""
     return settings
 
 
 def reload_settings():
-    """重新加载配置"""
+    """Reload config"""
     global settings
     settings.reload()
 
 
 # 便捷函数
 def get_config(key: str, default: Any = None) -> Any:
-    """获取配置值的便捷函数"""
+    """Convenient function to get config value"""
     return settings.get(key, default)
 
 
 def validate_config() -> bool:
-    """验证配置的便捷函数"""
+    """Convenient function to validate config"""
     return settings.validate_config()

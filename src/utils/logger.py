@@ -1,6 +1,6 @@
 """
-日志工具模块
-提供统一的日志记录功能
+Logging utility module
+Provides unified logging functionality
 """
 
 import logging
@@ -18,18 +18,18 @@ def setup_logger(
     format_string: Optional[str] = None
 ) -> logging.Logger:
     """
-    设置日志记录器
-    
+    Set up a logger.
+
     Args:
-        name: 日志记录器名称
-        log_file: 日志文件路径
-        level: 日志级别
-        format_string: 日志格式字符串
-        
+        name: Logger name
+        log_file: Path of the log file
+        level: Log level
+        format_string: Log format string
+
     Returns:
-        配置好的日志记录器
+        A configured logger
     """
-    # 获取配置
+    # Load configuration
     if not log_file:
         log_file = get_config('logging.file', 'logs/agent.log')
     if not format_string:
@@ -37,35 +37,35 @@ def setup_logger(
             'logging.format',
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-    
-    # 创建日志目录
+
+    # Create log directory
     log_path = Path(log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # 创建日志记录器
+
+    # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper()))
-    
-    # 避免重复添加处理器
+
+    # Avoid adding duplicate handlers
     if logger.handlers:
         return logger
-    
-    # 创建格式化器
+
+    # Create formatter
     formatter = logging.Formatter(format_string)
-    
-    # 控制台处理器
+
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-    
-    # 文件处理器（带轮转）
+
+    # File handler (with rotation)
     max_size = get_config('logging.max_size', '10MB')
     backup_count = get_config('logging.backup_count', 5)
-    
-    # 解析文件大小
+
+    # Parse size string
     size_bytes = _parse_size(max_size)
-    
+
     file_handler = logging.handlers.RotatingFileHandler(
         log_file,
         maxBytes=size_bytes,
@@ -75,22 +75,22 @@ def setup_logger(
     file_handler.setLevel(getattr(logging, level.upper()))
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    
+
     return logger
 
 
 def _parse_size(size_str: str) -> int:
     """
-    解析文件大小字符串
-    
+    Parse a size string.
+
     Args:
-        size_str: 大小字符串，如 '10MB', '1GB'
-        
+        size_str: Size string, e.g. '10MB', '1GB'
+
     Returns:
-        字节数
+        Size in bytes
     """
     size_str = size_str.upper().strip()
-    
+
     if size_str.endswith('KB'):
         return int(float(size_str[:-2]) * 1024)
     elif size_str.endswith('MB'):
@@ -98,95 +98,97 @@ def _parse_size(size_str: str) -> int:
     elif size_str.endswith('GB'):
         return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
     else:
-        # 默认为字节
+        # Default to bytes
         return int(size_str)
 
 
 def get_logger(name: str = "AIOpsAgent") -> logging.Logger:
     """
-    获取日志记录器
-    
+    Get a logger.
+
     Args:
-        name: 日志记录器名称
-        
+        name: Logger name
+
     Returns:
-        日志记录器
+        Logger instance
     """
     logger = logging.getLogger(name)
     if not logger.handlers:
-        # 如果没有处理器，则设置默认配置
+        # Set default config if no handlers found
         level = get_config('logging.level', 'INFO')
         return setup_logger(name, level=level)
     return logger
 
 
 class LoggerMixin:
-    """日志记录器混入类"""
-    
+    """Logger mixin class"""
+
     @property
     def logger(self) -> logging.Logger:
-        """获取日志记录器"""
+        """Get logger"""
         if not hasattr(self, '_logger'):
             class_name = self.__class__.__name__
             self._logger = get_logger(f"AIOpsAgent.{class_name}")
         return self._logger
 
 
-# 创建默认日志记录器
+# Create default logger
 default_logger = setup_logger()
 
 
 def log_function_call(func):
     """
-    装饰器：记录函数调用
-    
+    Decorator: log function call.
+
     Args:
-        func: 被装饰的函数
-        
+        func: Function to decorate
+
     Returns:
-        装饰后的函数
+        Decorated function
     """
     def wrapper(*args, **kwargs):
         logger = get_logger()
         func_name = func.__name__
-        logger.debug(f"调用函数: {func_name}")
-        
+        logger.debug(f"Calling function: {func_name}")
+
         try:
             result = func(*args, **kwargs)
-            logger.debug(f"函数 {func_name} 执行成功")
+            logger.debug(f"Function {func_name} executed successfully")
             return result
         except Exception as e:
-            logger.error(f"函数 {func_name} 执行失败: {e}")
+            logger.error(f"Function {func_name} failed: {e}")
             raise
-    
+
     return wrapper
 
 
 def log_execution_time(func):
     """
-    装饰器：记录函数执行时间
-    
+    Decorator: log function execution time.
+
     Args:
-        func: 被装饰的函数
-        
+        func: Function to decorate
+
     Returns:
-        装饰后的函数
+        Decorated function
     """
     import time
-    
+
     def wrapper(*args, **kwargs):
         logger = get_logger()
         func_name = func.__name__
-        
+
         start_time = time.time()
         try:
             result = func(*args, **kwargs)
             execution_time = time.time() - start_time
-            logger.info(f"函数 {func_name} 执行时间: {execution_time:.2f}秒")
+            logger.info(f"Function {func_name} execution time: {execution_time:.2f}s")
             return result
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"函数 {func_name} 执行失败 (耗时 {execution_time:.2f}秒): {e}")
+            logger.error(
+                f"Function {func_name} failed (took {execution_time:.2f}s): {e}"
+            )
             raise
     
     return wrapper

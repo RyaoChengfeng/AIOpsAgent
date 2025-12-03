@@ -18,7 +18,7 @@ app:
 
 # 日志配置
 logging:
-  level: "${LOG_LEVEL:INFO}"
+  level: "INFO"
   file: "logs/agent.log"
   max_size: "10MB"
   backup_count: 5
