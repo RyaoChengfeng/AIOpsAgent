@@ -12,8 +12,13 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from config.settings import get_config
 from src.utils.logger import get_logger
-from src.utils.helpers import get_file_info, create_backup_filename, validate_file_path, truncate_string
+from src.utils.helpers import get_file_info, create_backup_filename, validate_file_path, truncate_string, format_bytes
 from src.utils.exceptions import FileOperationError, PermissionError
+from datetime import datetime
+from langchain.output_parsers import PydanticOutputParser
+from langchain.prompts import PromptTemplate
+from langchain.chat_models import ChatOpenAI
+from config.settings import Settings
 
 logger = get_logger(__name__)
 
@@ -23,6 +28,46 @@ class FileManagerConfig(BaseModel):
     max_file_size: str = Field(default_factory=lambda: get_config('file_manager.max_file_size', '100MB'))
     allowed_extensions: List[str] = Field(default_factory=lambda: get_config('file_manager.allowed_extensions', ['.txt', '.log', '.conf', '.yaml', '.yml', '.json', '.py', '.sh']))
     search_depth: int = Field(default_factory=lambda: get_config('file_manager.search_depth', 10))
+
+
+class FileAction(BaseModel):
+    action: str = Field(description="Operation type: create_file, create_directory, delete_file, delete_directory, list_directory, search_files, read_file, backup_file, file_info")
+    path: Optional[str] = Field(default=None, description="Target file or directory path")
+    filename: Optional[str] = Field(default=None, description="Filename when applicable")
+    content: Optional[str] = Field(default=None, description="File content when creating or overwriting")
+    pattern: Optional[str] = Field(default=None, description="Search pattern (glob or keyword)")
+    is_directory: Optional[bool] = Field(default=None, description="Whether target refers to a directory")
+
+
+file_parser = PydanticOutputParser(pydantic_object=FileAction)
+
+file_prompt = PromptTemplate(
+    template="""You are a file operation parsing assistant. Extract structured fields from the user's natural language instruction.
+
+Allowed actions (must exactly match one):
+- create_file
+- create_directory
+- delete_file
+- delete_directory
+- list_directory
+- search_files
+- read_file
+- backup_file
+- file_info
+
+Rules:
+- path: absolute or relative path if present; otherwise None.
+- filename: when creating a file without an explicit path.
+- content: text following markers like 内容: or content:; otherwise None.
+- pattern: glob like *.py or keyword like error; otherwise None.
+- is_directory: true if explicitly a directory operation; else false.
+
+Command: {command}
+
+{format_instructions}""",
+    input_variables=["command"],
+    partial_variables={"format_instructions": file_parser.get_format_instructions()},
+)
 
 
 class FileManagerTool(BaseTool):
@@ -37,6 +82,33 @@ class FileManagerTool(BaseTool):
     )
     args_schema: Optional[BaseModel] = None
     
+    def _parse_command(self, text: str) -> FileAction:
+        settings = Settings()
+        openai_config = settings.get_openai_config()
+        max_tokens = openai_config.get('max_tokens', 2000)
+        model = openai_config.get('model', 'gpt-3.5-turbo')
+        temperature = openai_config.get('temperature', 0)
+        api_key = openai_config.get('api_key')
+        base_url = openai_config.get('base_url')
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            openai_api_key=api_key,
+            openai_api_base=base_url,
+            max_tokens=max_tokens,
+            default_headers={
+                "HTTP-Referer": "https://localhost/",
+                "X-Title": "DevOps-AIOps-Agent"
+            }
+        )
+        chain = file_prompt | llm | file_parser
+        try:
+            parsed = chain.invoke({"command": text})
+            return parsed
+        except Exception as e:
+            logger.warning(f"AI file parsing failed: {e}")
+            return FileAction(action="unknown")
+
     def _run(self, operation: str) -> str:
         """
         执行文件操作
@@ -48,7 +120,39 @@ class FileManagerTool(BaseTool):
             操作结果
         """
         try:
-            operation_lower = operation.lower()
+            parsed = self._parse_command(operation)
+            action = (parsed.action or "").strip()
+
+            if action == "create_file":
+                target = parsed.path or parsed.filename or ""
+                return self._create_file(target, parsed.content)
+            elif action == "create_directory":
+                target = parsed.path or parsed.filename or ""
+                return self._create_directory(target)
+            elif action == "delete_file":
+                target = parsed.path or parsed.filename or ""
+                return self._delete(target, is_dir=False)
+            elif action == "delete_directory":
+                target = parsed.path or parsed.filename or ""
+                return self._delete(target, is_dir=True)
+            elif action == "list_directory":
+                target = parsed.path or "."
+                return self._list_directory(target)
+            elif action == "search_files":
+                pattern = parsed.pattern or "*"
+                base = parsed.path or "."
+                return self._search_files_ai(pattern, base)
+            elif action == "read_file":
+                target = parsed.path or parsed.filename or ""
+                return self._read_file(target)
+            elif action == "backup_file":
+                target = parsed.path or parsed.filename or ""
+                return self._backup_file(target)
+            elif action == "file_info":
+                target = parsed.path or parsed.filename or ""
+                return self._get_file_info(target)
+
+            operation_lower = ""
             
             if "创建文件" in operation_lower or "create file" in operation_lower:
                 filename = self._extract_filename(operation)
@@ -94,31 +198,38 @@ class FileManagerTool(BaseTool):
             raise FileOperationError(f"文件操作执行失败: {str(e)}")
     
     def _extract_filename(self, operation: str) -> str:
-        """从操作描述中提取文件名"""
-        # 简单提取引号内或最后一个词作为文件名
+        parsed = self._parse_command(operation)
+        if parsed and parsed.filename:
+            return parsed.filename
         if '"' in operation:
             return operation.split('"')[1]
+        if "'" in operation:
+            return operation.split("'")[1]
         words = operation.split()
         return words[-1] if words else ""
     
     def _extract_content(self, operation: str) -> Optional[str]:
-        """从操作描述中提取文件内容"""
-        if "内容" in operation or "content" in operation:
-            # 假设内容在操作描述的最后部分
-            parts = operation.split("内容:", 1)
-            if len(parts) > 1:
-                return parts[1].strip()
+        parsed = self._parse_command(operation)
+        if parsed and parsed.content:
+            return parsed.content
+        if "内容:" in operation:
+            return operation.split("内容:", 1)[1].strip()
+        op_lower = operation.lower()
+        if "content:" in op_lower:
+            return op_lower.split("content:", 1)[1].strip()
         return None
     
     def _extract_path(self, operation: str) -> str:
-        """从操作描述中提取路径"""
-        # 简单提取最后一个词作为路径
+        parsed = self._parse_command(operation)
+        if parsed and parsed.path:
+            return parsed.path
         words = operation.split()
         return words[-1] if words else "."
     
     def _extract_search_pattern(self, operation: str) -> str:
-        """从操作描述中提取搜索模式"""
-        # 提取操作描述中的关键词
+        parsed = self._parse_command(operation)
+        if parsed and parsed.pattern:
+            return parsed.pattern
         keywords = ['error', 'warning', 'failed', 'exception']
         for keyword in keywords:
             if keyword in operation.lower():
@@ -134,10 +245,15 @@ class FileManagerTool(BaseTool):
             path = Path(filename)
             if path.exists():
                 return f"文件 '{filename}' 已存在。"
+            config = FileManagerConfig()
+            if path.suffix and config.allowed_extensions and path.suffix.lower() not in [ext.lower() for ext in config.allowed_extensions]:
+                return f"不允许的文件扩展名 '{path.suffix}'。允许: {', '.join(config.allowed_extensions)}"
             
             if content is None:
                 content = "# 新创建的文件内容"
             
+            if not validate_file_path(str(path), must_exist=False):
+                return f"父目录不存在，无法创建 '{filename}'。"
             path.write_text(content, encoding='utf-8')
             
             info = get_file_info(str(path))
@@ -238,9 +354,18 @@ class FileManagerTool(BaseTool):
             if not pattern:
                 pattern = "*"
             
-            # 在当前目录搜索
             current_dir = Path(".")
-            matches = list(current_dir.glob(pattern, recursive=False))
+            config = FileManagerConfig()
+            matches = [p for p in current_dir.rglob(pattern)]
+            filtered = []
+            for p in matches:
+                try:
+                    depth = len(p.relative_to(current_dir).parts)
+                except ValueError:
+                    depth = 0
+                if depth <= config.search_depth:
+                    filtered.append(p)
+            matches = filtered
             
             if not matches:
                 return f"未找到匹配 '{pattern}' 的文件。"
@@ -254,6 +379,37 @@ class FileManagerTool(BaseTool):
                 modified = info.get('modified', '未知').strftime('%Y-%m-%d %H:%M') if info.get('modified') else '未知'
                 result += f"{match.name}\\t{size}\\t修改: {modified}\\n"
             
+            return result
+        except Exception as e:
+            logger.error(f"搜索文件失败: {e}")
+            raise FileOperationError(f"搜索失败: {str(e)}")
+
+    def _search_files_ai(self, pattern: str, base: Optional[str] = None) -> str:
+        """基于 AI 解析的搜索（支持指定基目录）"""
+        try:
+            if not pattern:
+                pattern = "*"
+            current_dir = Path(base or ".")
+            config = FileManagerConfig()
+            matches = [p for p in current_dir.rglob(pattern)]
+            filtered: List[Path] = []
+            for p in matches:
+                try:
+                    depth = len(p.relative_to(current_dir).parts)
+                except ValueError:
+                    depth = 0
+                if depth <= config.search_depth:
+                    filtered.append(p)
+            if not filtered:
+                return f"未找到匹配 '{pattern}' 的文件。"
+            result = f"搜索结果 (匹配 '{pattern}'): ({len(filtered)} 个文件)\n"
+            result += "-" * 40 + "\n"
+            for match in filtered:
+                info = get_file_info(str(match))
+                size = info.get('size_formatted', '0B')
+                modified = info.get('modified', '未知')
+                modified_str = modified.strftime('%Y-%m-%d %H:%M') if hasattr(modified, 'strftime') else '未知'
+                result += f"{match.name}\t{size}\t修改: {modified_str}\n"
             return result
         except Exception as e:
             logger.error(f"搜索文件失败: {e}")
@@ -273,6 +429,8 @@ class FileManagerTool(BaseTool):
             size_bytes = info.get('size', 0)
             
             config = FileManagerConfig()
+            if full_path.suffix and config.allowed_extensions and full_path.suffix.lower() not in [ext.lower() for ext in config.allowed_extensions]:
+                return f"不允许读取扩展名为 '{full_path.suffix}' 的文件。允许: {', '.join(config.allowed_extensions)}"
             max_size_bytes = self._parse_size(config.max_file_size)
             
             if size_bytes > max_size_bytes:
@@ -362,6 +520,6 @@ if __name__ == "__main__":
     try:
         tool = FileManagerTool()
         print("测试文件管理工具:")
-        print(tool._run("列出当前目录"))
+        print(tool._run("列出 ."))
     except Exception as e:
         print(f"测试失败: {e}")
