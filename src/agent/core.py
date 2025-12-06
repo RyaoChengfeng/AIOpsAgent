@@ -99,10 +99,6 @@ class DevOpsAgent:
             tools.append(SystemMonitorTool())
             tools.append(FileManagerTool())
             tools.append(LogAnalyzerTool())
-
-            # PerformanceAnalyzerTool could be added here
-            # tools.append(PerformanceAnalyzerTool())
-
             tools.append(ServiceCheckerTool())
 
             logger.info(f"{len(tools)} tools initialized successfully.")
