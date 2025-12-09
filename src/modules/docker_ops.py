@@ -18,12 +18,11 @@ from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
 from langchain.chat_models import ChatOpenAI
 from config.settings import Settings
-from pydantic import BaseModel, Field
 
 
 class DockerAction(BaseModel):
     """Docker operation parsing model"""
-    action: str = Field(description="Operation type, such as list_containers, start_container, pull_image, etc.")
+    action: List[str] = Field(description="Operation type, such as list_containers, start_container, pull_image, etc.")
     target: Optional[str] = Field(default=None, description="Target container name or image name")
 
 
@@ -32,7 +31,7 @@ docker_parser = PydanticOutputParser(pydantic_object=DockerAction)
 docker_prompt = PromptTemplate(
     template="""You are a professional Docker command parsing expert. Strictly extract structured information from the following natural language instruction:
 
-Available action types (must EXACTLY match one of the following; do NOT invent new types):
+Available actions (can be multiple, in order):
 - list_containers
 - container_status
 - start_container
@@ -72,7 +71,7 @@ class DockerOpsTool(BaseTool):
         "Supports starting, stopping, restarting containers, querying container status, "
         "pulling and deleting images, viewing container logs, and more. "
         "Input should be a natural language description, such as 'start container named web-app' "
-        "or 'show all container status'."
+        "or 'show all container status'. Supports multiple actions in one command."
     )
     args_schema: Optional[BaseModel] = None
 
@@ -80,7 +79,7 @@ class DockerOpsTool(BaseTool):
         """Initialize Docker tool"""
         super().__init__()
 
-    def _parse_command(self, command: str) -> tuple[str, Optional[str]]:
+    def _parse_command(self, command: str) -> tuple[List[str], Optional[str]]:
         """
         Parse Docker command using AI to extract action and target.
         """
@@ -91,7 +90,7 @@ class DockerOpsTool(BaseTool):
         temperature = openai_config.get('temperature', 0)
         api_key = openai_config.get('api_key')
         base_url = openai_config.get('base_url')
-        llm = ChatOpenAI(
+        llm_instance = ChatOpenAI(
             model=model,
             temperature=temperature,
             openai_api_key=api_key,
@@ -102,54 +101,63 @@ class DockerOpsTool(BaseTool):
                 "X-Title": "DevOps-AIOps-Agent"
             }
         )
-        chain = docker_prompt | llm | docker_parser
+        chain = docker_prompt | llm_instance | docker_parser
         try:
             parsed = chain.invoke({"command": command})
             return parsed.action, parsed.target
         except Exception as e:
             logger.warning(f"AI command parsing failed: {e}")
-            return "unknown", None
+            return ["unknown"], None
 
     def _run(self, command: str) -> str:
         """
-        Execute Docker operation.
+        Execute Docker operations (support multiple actions in sequence).
         """
         try:
             client = self._get_docker_client()
-            action, target = self._parse_command(command)
+            actions, target = self._parse_command(command)
 
-            if action == "list_containers":
-                return self._list_containers(client)
-            elif action == "container_status":
-                return self._get_container_status(client, target)
-            elif action == "start_container":
-                return self._start_container(client, target)
-            elif action == "stop_container":
-                return self._stop_container(client, target)
-            elif action == "restart_container":
-                return self._restart_container(client, target)
-            elif action == "container_logs":
-                return self._get_container_logs(client, target)
-            elif action == "pull_image":
-                return self._pull_image(client, target)
-            elif action == "remove_image":
-                return self._remove_image(client, target)
-            elif action == "list_images":
-                return self._list_images(client)
-            elif action == "run_image":
-                return self._run_image(client, target)
-            else:
-                return (
-                    f"Unsupported Docker operation: {command}. "
-                    "Supported operations include: list containers, container status, "
-                    "start/stop/restart container, view logs, pull/remove images, list images."
-                )
+            results = []
+
+            for action in actions:
+                try:
+                    if action == "list_containers":
+                        results.append(self._list_containers(client))
+                    elif action == "container_status":
+                        results.append(self._get_container_status(client, target))
+                    elif action == "start_container":
+                        results.append(self._start_container(client, target))
+                    elif action == "stop_container":
+                        results.append(self._stop_container(client, target))
+                    elif action == "restart_container":
+                        results.append(self._restart_container(client, target))
+                    elif action == "container_logs":
+                        results.append(self._get_container_logs(client, target))
+                    elif action == "pull_image":
+                        results.append(self._pull_image(client, target))
+                    elif action == "remove_image":
+                        results.append(self._remove_image(client, target))
+                    elif action == "list_images":
+                        results.append(self._list_images(client))
+                    elif action == "run_image":
+                        results.append(self._run_image(client, target))
+                    else:
+                        results.append(
+                            f"Unsupported Docker operation: {action}. "
+                            "Supported operations include: list containers, container status, "
+                            "start/stop/restart container, view logs, pull/remove images, list images."
+                        )
+                except Exception as e:
+                    logger.error(f"Action '{action}' failed: {e}")
+                    results.append(f"❌ Action '{action}' failed: {str(e)}")
+
+            return "\n\n".join(results)
 
         except Exception as e:
             logger.error(f"Docker operation failed: {e}")
             raise DockerOperationError(f"Docker operation failed: {str(e)}")
 
-    def _get_docker_client(self) -> docker.DockerClient:
+    def _get_docker_client(self) -> Optional[docker.DockerClient]:
         """Get Docker client"""
         config = DockerConfig()
         try:
@@ -221,24 +229,30 @@ class DockerOpsTool(BaseTool):
                 f"docker inspect {container_name} --format='{{json .State}}'"
             )
 
-    def _run_image(self, client, image_name: str, container_name: Optional[str] = None) -> str:
-        """Run a container once from an image"""
+    def _run_image(self, client, image_name: str, container_name: Optional[str] = None, detach: bool = True) -> str:
+        """Run a container from an image, default in detached mode to avoid blocking"""
         if not image_name:
             return "Please specify an image name."
 
         if client:
             try:
-                container = client.containers.run(image_name, name=container_name, detach=False)
-                return f"✅ Image '{image_name}' ran successfully!"
+                container = client.containers.run(image_name, name=container_name, detach=detach)
+                status_msg = f"✅ Image '{image_name}' started successfully!"
+                if detach:
+                    status_msg += f"\nContainer ID: {container.short_id} (running in background)"
+                return status_msg
             except docker.errors.ImageNotFound:
                 return f"Image '{image_name}' not found. Please pull it first."
             except Exception as e:
                 logger.error(f"Failed to run image: {e}")
                 raise DockerOperationError(f"Failed to run '{image_name}': {str(e)}")
         else:
-            result = self._run_docker_command(f"run {image_name}")
+            # CLI fallback
+            cmd = f"docker run -d {image_name}" if detach else f"docker run {image_name}"
+            result = self._run_docker_command(cmd)
             if result[0] == 0:
-                return f"✅ Image '{image_name}' ran successfully!"
+                return f"✅ Image '{image_name}' ran successfully!" + (
+                    f"\nContainer ID: {result[1].strip()}" if detach else "")
             else:
                 return f"❌ Failed to run '{image_name}': {result[2]}"
 

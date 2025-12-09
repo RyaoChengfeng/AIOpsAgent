@@ -11,7 +11,6 @@ Automates and simplifies DevOps tasks via an interactive AI chat interface.
 - **📊 System Monitoring**: CPU, memory, disk, and network usage
 - **📁 File Management**: File and directory operations, content search
 - **📋 Log Analysis**: Intelligent log parsing, error detection, report generation
-- **⚡ Performance Analysis**: Python program profiling
 - **🔧 Service Management**: Check and restart system services
 
 ### AI Capabilities
@@ -173,21 +172,4 @@ logging:
   max_size: "10MB"
   backup_count: 5
 ```
-
-
-## 📝 Changelog
-
-v1.1.0 (2025-10-5)
-- Refactored the project into a more modular and maintainable directory structure, separating agents, CLI, utilities, tools, and configuration.
-- Improved the agent core architecture, isolating initialization logic, prompt templates, and execution flow for better extensibility.
-- Updated and cleaned dependency definitions in requirements.txt, removing unused packages and aligning versions with the new LangChain / OpenAI SDK implementations.
-- Enhanced internal error handling to provide clearer diagnostics during agent initialization and runtime.
-- Introduced clearer boundaries between components such as LLM wrappers, tool definitions, and execution pipelines.
-
-v1.0.0 (2025-9-5)
-- Initial project setup.
-- Implemented basic CLI.
-- Added simple LLM wrapper and preliminary tool integration.
-
-
 
